@@ -3,7 +3,12 @@ package mssql
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/katasec/dstream/pkg/config"
@@ -20,10 +25,8 @@ type Ingester struct {
 	config        *config.Config
 	dbConn        *sql.DB
 	lockerFactory *locking.LockerFactory
-}
-
-func New() plugins.Ingester {
-	return &Ingester{}
+	wg            *sync.WaitGroup
+	heldLocks     map[string]locking.DistributedLocker
 }
 
 // emitPublisher adapts emit(...) to the cdc.ChangePublisher interface
@@ -35,17 +38,29 @@ type emitPublisher struct {
 func (e *emitPublisher) PublishChanges(changes []map[string]any) (<-chan bool, error) {
 	done := make(chan bool, 1)
 
-	err := e.emitFn(plugins.Event{
+	evt := plugins.Event{
 		"table": e.table,
 		"data":  changes,
-	})
+	}
 
+	jsonPayload, _ := json.MarshalIndent(evt, "", "  ")
+	log := logging.GetLogger()
+	log.Info("Received event:\n" + string(jsonPayload))
+
+	err := e.emitFn(evt)
 	done <- err == nil
 	return done, nil
 }
 
 func (e *emitPublisher) Close() error {
 	return nil
+}
+
+func New() plugins.Ingester {
+	return &Ingester{
+		wg:        &sync.WaitGroup{},
+		heldLocks: make(map[string]locking.DistributedLocker),
+	}
 }
 
 func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) error {
@@ -73,6 +88,8 @@ func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) er
 		cfg.Ingester.DBConnectionString,
 	)
 
+	ctx, cancel := context.WithCancel(ctx)
+
 	for _, table := range cfg.Ingester.Tables {
 		tableName := table.Name
 
@@ -95,12 +112,13 @@ func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) er
 		}
 		logger.Debug("Acquired lease", "leaseID", leaseID)
 
+		s.heldLocks[lockName] = locker
+
 		// Convert polling intervals
 		pollInterval, err := time.ParseDuration(table.PollInterval)
 		if err != nil {
 			return fmt.Errorf("invalid pollInterval for table %s: %w", tableName, err)
 		}
-
 		maxPollInterval, err := time.ParseDuration(table.MaxPollInterval)
 		if err != nil {
 			return fmt.Errorf("invalid maxPollInterval for table %s: %w", tableName, err)
@@ -119,15 +137,34 @@ func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) er
 			publisher,
 		)
 
+		s.wg.Add(1)
 		go func(tName string) {
+			defer s.wg.Done()
 			if err := monitor.MonitorTable(ctx); err != nil {
 				logger.Error("Monitor failed", "table", tName, "error", err)
 			}
 		}(tableName)
 	}
 
-	<-ctx.Done()
-	logger.Info("Context cancelled — shutting down MSSQL ingester")
+	// Wait for signal
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	<-sigChan
+
+	logger.Info("Ctrl-C detected, shutting down gracefully...")
+	cancel()
+
+	// Release all held locks
+	for lockName, locker := range s.heldLocks {
+		logger.Info("Releasing lock", "lock", lockName)
+		err := locker.ReleaseLock(context.Background(), lockName, "")
+		if err != nil {
+			logger.Error("Failed to release lock", "lock", lockName, "error", err)
+		}
+	}
+
+	s.wg.Wait()
+	logger.Info("All monitoring goroutines exited cleanly.")
 	return nil
 }
 
