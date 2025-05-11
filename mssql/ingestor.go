@@ -8,7 +8,9 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
+	"github.com/katasec/dstream-ingester-mssql/mssql/monitor"
 	"github.com/katasec/dstream/pkg/config"
 	"github.com/katasec/dstream/pkg/db"
 	"github.com/katasec/dstream/pkg/locking"
@@ -54,33 +56,50 @@ func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) er
 		cfg.Ingester.DBConnectionString,
 	)
 
-	// Filter tables that are not CDC-enabled and not locked
-	tablesToMonitor := s.getTablesToMonitor()
+	// ✅ Filter tables
+	tablesToMonitor := s.GetTablesToMonitor()
 	if len(tablesToMonitor) == 0 {
 		logger.Info("No available tables to monitor — exiting.")
 		return nil
 	}
 
-	// Launch orchestrator
-	orchestrator := orchestrator.NewTableMonitoringOrchestrator(
+	// ✅ Wire up the orchestrator
+	genericOrch := orchestrator.NewGenericTableMonitoringOrchestrator(
 		s.dbConn,
 		s.lockerFactory,
 		tablesToMonitor,
+		func(table config.ResolvedTableConfig) (orchestrator.TableMonitor, error) {
+			pollDur, err := time.ParseDuration(table.PollInterval)
+			if err != nil {
+				return nil, fmt.Errorf("invalid PollInterval for table %s: %w", table.Name, err)
+			}
+			maxDur, err := time.ParseDuration(table.MaxPollInterval)
+			if err != nil {
+				return nil, fmt.Errorf("invalid MaxPollInterval for table %s: %w", table.Name, err)
+			}
+
+			return monitor.NewSQLServerTableMonitor(
+				s.dbConn,
+				table.Name,
+				pollDur,
+				maxDur,
+				&pluginPublisher{emit: emit},
+			), nil
+		},
 	)
 
 	go func() {
-		if err := orchestrator.Start(ctx); err != nil {
+		if err := genericOrch.Start(ctx); err != nil {
 			logger.Error("Orchestrator error", "error", err)
 		}
 	}()
 
-	// Handle graceful shutdown
+	// ✅ Handle shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	<-sigChan
 
 	logger.Info("Ctrl-C detected, shutting down gracefully...")
-	orchestrator.ReleaseAllLocks(context.Background())
 	logger.Info("All monitoring goroutines exited cleanly.")
 	return nil
 }
@@ -90,7 +109,8 @@ func (s *Ingester) Stop() error {
 	return nil
 }
 
-func (s *Ingester) getTablesToMonitor() []config.ResolvedTableConfig {
+// ✅ Exported so it's accessible
+func (s *Ingester) GetTablesToMonitor() []config.ResolvedTableConfig {
 	logger := logging.GetLogger()
 	var toMonitor []config.ResolvedTableConfig
 	tableNames := make([]string, len(s.config.Ingester.Tables))
@@ -136,4 +156,30 @@ func isCDCEnabled(conn *sql.DB, tableName string) (bool, error) {
 		return false, fmt.Errorf("failed to check CDC for table %s: %w", tableName, err)
 	}
 	return count > 0, nil
+}
+
+// ✅ Simple wrapper to adapt `emit` function to a publisher
+type pluginPublisher struct {
+	emit func(plugins.Event) error
+}
+
+// Wraps single-event publishing into batch mode
+func (p *pluginPublisher) PublishChanges(changes []map[string]interface{}) (<-chan bool, error) {
+	done := make(chan bool, 1)
+
+	go func() {
+		for _, change := range changes {
+			if err := p.emit(plugins.Event(change)); err != nil {
+				done <- false
+				return
+			}
+		}
+		done <- true
+	}()
+
+	return done, nil
+}
+
+func (p *pluginPublisher) Close() error {
+	return nil
 }

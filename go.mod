@@ -2,7 +2,9 @@ module github.com/katasec/dstream-ingester-mssql
 
 go 1.24.2
 
-require github.com/katasec/dstream v0.0.17
+replace github.com/katasec/dstream => ../dstream
+
+require github.com/katasec/dstream v0.0.0-00010101000000-000000000000
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.0 // indirect
@@ -34,5 +36,3 @@ require (
 	golang.org/x/text v0.24.0 // indirect
 	golang.org/x/tools v0.31.0 // indirect
 )
-
-replace github.com/katasec/dstream => ../dstream
