@@ -4,57 +4,30 @@ import (
 	"context"
 	"fmt"
 	"log"
-
-	"github.com/hashicorp/hcl/v2"
-	"github.com/hashicorp/hcl/v2/gohcl"
-	"github.com/hashicorp/hcl/v2/hclsyntax"
-
-	"github.com/katasec/dstream/pkg/plugins"
+	"strings"
 )
-
-// PluginConfig matches the HCL config block
-type PluginConfig struct {
-	DBConnectionString string   `hcl:"db_connection_string"`
-	Tables             []string `hcl:"tables"`
-}
 
 type Plugin struct{}
 
-func (p *Plugin) Start(ctx context.Context, rawConfig []byte) error {
-	var cfg PluginConfig
+func (p *Plugin) Start(ctx context.Context, cfg map[string]string) error {
+	log.Println("[MSSQLPlugin] Received config:", cfg)
 
-	// Parse HCL config bytes
-	file, diags := hclsyntax.ParseConfig(rawConfig, "plugin_config.hcl", hcl.InitialPos)
-	if diags.HasErrors() {
-		return diags
+	connStr := cfg["db_connection_string"]
+	if connStr == "" {
+		return fmt.Errorf("missing required config: db_connection_string")
 	}
 
-	// Extract the inner "config" block
-	content, _, diags := file.Body.PartialContent(&hcl.BodySchema{
-		Blocks: []hcl.BlockHeaderSchema{
-			{Type: "config"},
-		},
-	})
-	if diags.HasErrors() {
-		return diags
-	}
-	if len(content.Blocks) == 0 {
-		return fmt.Errorf("no 'config' block found in task")
+	rawTables := cfg["tables"]
+	if rawTables == "" {
+		return fmt.Errorf("missing required config: tables")
 	}
 
-	// Decode into Go struct
-	diags = gohcl.DecodeBody(content.Blocks[0].Body, nil, &cfg)
-	if diags.HasErrors() {
-		return diags
-	}
+	// Parse tables as comma-separated string
+	tables := strings.Split(rawTables, ",")
 
-	// Log parsed config
-	log.Printf("[MSSQLPlugin] Config: DB = %s, Tables = %v", cfg.DBConnectionString, cfg.Tables)
+	log.Printf("Connecting to DB: %s", connStr)
+	log.Printf("Monitoring tables: %v", tables)
 
-	// Start the actual CDC ingestion
-	ing := New()
-	return ing.Start(ctx, func(e plugins.Event) error {
-		log.Printf("[EVENT] %v", e)
-		return nil
-	})
+	// Start ingestion with parsed config
+	return StartFromConfig(ctx, connStr, tables)
 }

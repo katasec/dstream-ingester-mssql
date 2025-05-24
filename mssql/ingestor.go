@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"sync"
@@ -182,4 +183,12 @@ func (p *pluginPublisher) PublishChanges(changes []map[string]interface{}) (<-ch
 
 func (p *pluginPublisher) Close() error {
 	return nil
+}
+
+func StartFromConfig(ctx context.Context, dbConnectionString string, tables []string) error {
+	ing := New()
+	return ing.Start(ctx, func(e plugins.Event) error {
+		log.Printf("[EVENT] %v", e)
+		return nil
+	})
 }
