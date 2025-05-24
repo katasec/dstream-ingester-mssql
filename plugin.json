@@ -1,0 +1,8 @@
+{
+  "name": "dstream-ingester-mssql",
+  "version": "v0.0.1",
+  "type": "ingester",
+  "entry": "plugin",
+  "description": "Ingester for Microsoft SQL Server (MSSQL) to DStream",
+  "platforms": ["linux_amd64", "windows_amd64"]
+}
