@@ -6,6 +6,7 @@ replace github.com/katasec/dstream => ../dstream
 
 require (
 	github.com/hashicorp/go-plugin v1.6.3
+	github.com/hashicorp/hcl/v2 v2.23.0
 	github.com/katasec/dstream v0.0.0-00010101000000-000000000000
 )
 
@@ -28,7 +29,6 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-hclog v0.14.1 // indirect
-	github.com/hashicorp/hcl/v2 v2.23.0 // indirect
 	github.com/hashicorp/yamux v0.1.1 // indirect
 	github.com/huandu/xstrings v1.5.0 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect
