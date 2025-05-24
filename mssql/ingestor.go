@@ -56,14 +56,14 @@ func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) er
 		cfg.Ingester.DBConnectionString,
 	)
 
-	// ✅ Filter tables
+	// Filter tables
 	tablesToMonitor := s.GetTablesToMonitor()
 	if len(tablesToMonitor) == 0 {
 		logger.Info("No available tables to monitor — exiting.")
 		return nil
 	}
 
-	// ✅ Wire up the orchestrator
+	// Wire up the orchestrator
 	genericOrch := orchestrator.NewGenericTableMonitoringOrchestrator(
 		s.dbConn,
 		s.lockerFactory,
@@ -94,7 +94,7 @@ func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) er
 		}
 	}()
 
-	// ✅ Handle shutdown
+	// Handle shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	<-sigChan
@@ -109,7 +109,7 @@ func (s *Ingester) Stop() error {
 	return nil
 }
 
-// ✅ Exported so it's accessible
+// Exported so it's accessible
 func (s *Ingester) GetTablesToMonitor() []config.ResolvedTableConfig {
 	logger := logging.GetLogger()
 	var toMonitor []config.ResolvedTableConfig
@@ -158,7 +158,7 @@ func isCDCEnabled(conn *sql.DB, tableName string) (bool, error) {
 	return count > 0, nil
 }
 
-// ✅ Simple wrapper to adapt `emit` function to a publisher
+// Simple wrapper to adapt `emit` function to a publisher
 type pluginPublisher struct {
 	emit func(plugins.Event) error
 }
