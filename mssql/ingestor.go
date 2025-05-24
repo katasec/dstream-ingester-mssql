@@ -37,11 +37,12 @@ func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) er
 	logger := logging.GetLogger()
 	logger.Info("Starting MSSQL ingester...")
 
-	cfg, err := config.LoadConfig("dstream.hcl")
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+	// Ensure config is already injected (set by StartFromConfig)
+	if s.config == nil {
+		return fmt.Errorf("ingester config not set")
 	}
-	s.config = cfg
+
+	cfg := s.config
 
 	dbConn, err := db.Connect(cfg.Ingester.DBConnectionString)
 	if err != nil {
@@ -57,14 +58,12 @@ func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) er
 		cfg.Ingester.DBConnectionString,
 	)
 
-	// Filter tables
 	tablesToMonitor := s.GetTablesToMonitor()
 	if len(tablesToMonitor) == 0 {
 		logger.Info("No available tables to monitor — exiting.")
 		return nil
 	}
 
-	// Wire up the orchestrator
 	genericOrch := orchestrator.NewGenericTableMonitoringOrchestrator(
 		s.dbConn,
 		s.lockerFactory,
@@ -95,7 +94,6 @@ func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) er
 		}
 	}()
 
-	// Handle shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	<-sigChan
@@ -110,7 +108,6 @@ func (s *Ingester) Stop() error {
 	return nil
 }
 
-// Exported so it's accessible
 func (s *Ingester) GetTablesToMonitor() []config.ResolvedTableConfig {
 	logger := logging.GetLogger()
 	var toMonitor []config.ResolvedTableConfig
@@ -159,12 +156,10 @@ func isCDCEnabled(conn *sql.DB, tableName string) (bool, error) {
 	return count > 0, nil
 }
 
-// Simple wrapper to adapt `emit` function to a publisher
 type pluginPublisher struct {
 	emit func(plugins.Event) error
 }
 
-// Wraps single-event publishing into batch mode
 func (p *pluginPublisher) PublishChanges(changes []map[string]interface{}) (<-chan bool, error) {
 	done := make(chan bool, 1)
 
@@ -186,7 +181,16 @@ func (p *pluginPublisher) Close() error {
 }
 
 func StartFromConfig(ctx context.Context, dbConnectionString string, tables []string) error {
-	ing := New()
+	ing := &Ingester{
+		config: &config.Config{
+			Ingester: config.Ingester{
+				DBConnectionString: dbConnectionString,
+				RawTables:          tables,
+				// Add placeholder/defaults if needed for Locks, PollIntervalDefaults, etc.
+			},
+		},
+		wg: &sync.WaitGroup{},
+	}
 	return ing.Start(ctx, func(e plugins.Event) error {
 		log.Printf("[EVENT] %v", e)
 		return nil
