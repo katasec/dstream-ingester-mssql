@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
+
+	pb "github.com/katasec/dstream/proto"
 )
 
 type Plugin struct{}
@@ -28,6 +30,22 @@ func (p *Plugin) Start(ctx context.Context, cfg map[string]string) error {
 	log.Printf("Connecting to DB: %s", connStr)
 	log.Printf("Monitoring tables: %v", tables)
 
-	// Start ingestion with parsed config
 	return StartFromConfig(ctx, connStr, tables)
+}
+
+func (p *Plugin) GetSchema(ctx context.Context) ([]*pb.FieldSchema, error) {
+	return []*pb.FieldSchema{
+		{
+			Name:        "db_connection_string",
+			Type:        pb.FieldTypeString,
+			Required:    true,
+			Description: "Connection string to connect to the MSSQL database",
+		},
+		{
+			Name:        "tables",
+			Type:        pb.FieldTypeList,
+			Required:    true,
+			Description: "Comma-separated list of tables to monitor for CDC",
+		},
+	}, nil
 }
