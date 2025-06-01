@@ -31,7 +31,7 @@ func main() {
 			},
 		},
 		GRPCServer: hplugin.DefaultGRPCServer,
-		Logger:     DiscardLogger(), // ✅ Now safely integrated
+		//Logger:     DiscardLogger(), // ✅ Now safely integrated
 	})
 }
 
