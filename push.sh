@@ -10,10 +10,10 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 echo "🔧 Building cross-platform binaries..."
 
 # Linux
-GOOS=linux GOARCH=amd64 go build -o "$TMP_DIR/plugin.linux_amd64" ./main.go
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$TMP_DIR/plugin.linux_amd64" ./main.go
 
 # Windows
-GOOS=windows GOARCH=amd64 go build -o "$TMP_DIR/plugin.windows_amd64.exe" ./main.go
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o "$TMP_DIR/plugin.windows_amd64.exe" ./main.go
 
 # Manifest
 cp ./plugin.json "$TMP_DIR/plugin.json"
