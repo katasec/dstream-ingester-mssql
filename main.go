@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/hashicorp/go-hclog"
 	hplugin "github.com/hashicorp/go-plugin"
 
 	"github.com/katasec/dstream-ingester-mssql/mssql"
@@ -18,6 +19,7 @@ func main() {
 	// 🎯 Wrap your custom logger with hclog-compatible adapter
 	stdLogger := logging.GetLogger()
 	hclogAdapter := logging.NewHcLogAdapter(stdLogger)
+	hclogAdapter.SetLevel(hclog.Warn)
 
 	// 🚀 Start plugin with handshake and your logger
 	hplugin.Serve(&hplugin.ServeConfig{
