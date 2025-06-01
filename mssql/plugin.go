@@ -3,16 +3,19 @@ package mssql
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
+	"github.com/katasec/dstream/pkg/logging"
 	pb "github.com/katasec/dstream/proto"
 )
 
 type Plugin struct{}
 
 func (p *Plugin) Start(ctx context.Context, cfg map[string]string) error {
-	log.Println("[MSSQLPlugin] Received config:", cfg)
+
+	log := logging.GetLogger()
+
+	log.Debug("[MSSQLPlugin] Received config:", cfg)
 
 	connStr := cfg["db_connection_string"]
 	if connStr == "" {
@@ -27,8 +30,8 @@ func (p *Plugin) Start(ctx context.Context, cfg map[string]string) error {
 	// Parse tables as comma-separated string
 	tables := strings.Split(rawTables, ",")
 
-	log.Printf("Connecting to DB: %s", connStr)
-	log.Printf("Monitoring tables: %v", tables)
+	log.Info("Connecting to DB: %s", connStr)
+	log.Info("Monitoring tables: %v", tables)
 
 	return StartFromConfig(ctx, connStr, tables)
 }
