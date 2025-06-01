@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"log"
 	"os"
 
@@ -30,6 +31,16 @@ func main() {
 			},
 		},
 		GRPCServer: hplugin.DefaultGRPCServer,
-		Logger:     hclogAdapter, // ✅ Now safely integrated
+		Logger:     DiscardLogger(), // ✅ Now safely integrated
+	})
+}
+
+// DiscardLogger returns a logger that swallows everything.
+func DiscardLogger() hclog.Logger {
+	return hclog.New(&hclog.LoggerOptions{
+		Name:       "silent",
+		Level:      hclog.Off, // disables all logging
+		Output:     io.Discard,
+		JSONFormat: false,
 	})
 }
