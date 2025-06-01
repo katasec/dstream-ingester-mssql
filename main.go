@@ -1,6 +1,9 @@
 package main
 
 import (
+	"log"
+	"os"
+
 	hplugin "github.com/hashicorp/go-plugin"
 
 	"github.com/katasec/dstream-ingester-mssql/mssql"
@@ -9,12 +12,14 @@ import (
 )
 
 func main() {
-	// Get dstream logger
-	stdLogger := logging.GetLogger()
+	// 🔒 Ensure stdlib log doesn't interfere with go-plugin handshake
+	log.SetOutput(os.Stderr)
 
-	// Wrap dstream logger to hclog adapter
+	// 🎯 Wrap your custom logger with hclog-compatible adapter
+	stdLogger := logging.GetLogger()
 	hclogAdapter := logging.NewHcLogAdapter(stdLogger)
 
+	// 🚀 Start plugin with handshake and your logger
 	hplugin.Serve(&hplugin.ServeConfig{
 		HandshakeConfig: serve.Handshake,
 		Plugins: map[string]hplugin.Plugin{
@@ -23,6 +28,6 @@ func main() {
 			},
 		},
 		GRPCServer: hplugin.DefaultGRPCServer,
-		Logger:     hclogAdapter,
+		Logger:     hclogAdapter, // ✅ Now safely integrated
 	})
 }
