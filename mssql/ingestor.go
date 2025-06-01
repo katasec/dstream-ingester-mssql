@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"sync"
@@ -192,7 +191,8 @@ func StartFromConfig(ctx context.Context, dbConnectionString string, tables []st
 		wg: &sync.WaitGroup{},
 	}
 	return ing.Start(ctx, func(e plugins.Event) error {
-		log.Printf("[EVENT] %v", e)
+		logger := logging.GetLogger()
+		logger.Info("[EVENT] %v", e)
 		return nil
 	})
 }
