@@ -29,7 +29,7 @@ type Ingester struct {
 func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) error {
 	logger := GetLogger()
 	logger.Info("Starting MSSQL ingester...")
-	
+
 	// Initialize the monitor package's logger
 	monitor.SetLogger(logger)
 
@@ -113,7 +113,6 @@ func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) er
 				&pluginPublisher{emit: emit},
 			), nil
 		},
-		logger, // Pass the plugin's logger to avoid duplicate prefixes
 	)
 
 	// Start the orchestrator directly in the main thread
@@ -124,7 +123,7 @@ func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) er
 		logger.Error("Orchestrator error", "error", err)
 		return err
 	}
-	
+
 	// If we get here, it means the orchestrator exited normally (context was cancelled)
 	logger.Info("Orchestrator exited cleanly")
 	return nil
@@ -207,5 +206,3 @@ func (p *pluginPublisher) PublishChanges(changes []map[string]interface{}) (<-ch
 	return done, nil
 }
 func (p *pluginPublisher) Close() error { return nil }
-
-
