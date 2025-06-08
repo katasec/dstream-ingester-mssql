@@ -29,6 +29,9 @@ type Ingester struct {
 func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) error {
 	logger := GetLogger()
 	logger.Info("Starting MSSQL ingester...")
+	
+	// Initialize the monitor package's logger
+	monitor.SetLogger(logger)
 
 	// Ensure config is injected
 	if s.config == nil {

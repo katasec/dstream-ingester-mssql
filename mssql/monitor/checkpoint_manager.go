@@ -5,10 +5,17 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/katasec/dstream/pkg/logging"
+	"github.com/hashicorp/go-hclog"
 )
 
-var log = logging.GetLogger()
+// Default logger - will be replaced by SetLogger
+var log hclog.Logger
+
+// SetLogger sets the logger for the monitor package
+func SetLogger(logger hclog.Logger) {
+	log = logger
+}
+
 var defaultStartLSN = "00000000000000000000"
 
 // Default checkpoint table name
