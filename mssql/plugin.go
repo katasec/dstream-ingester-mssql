@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/katasec/dstream/pkg/logging"
 	"github.com/katasec/dstream/pkg/plugins"
 	pb "github.com/katasec/dstream/proto"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -21,7 +20,7 @@ type Plugin struct{}
 //
 // ───────────────────────────────────────────────────────────────────────────────
 func (p *Plugin) Start(ctx context.Context, cfg *structpb.Struct) error {
-	log := logging.GetLogger()
+	log := GetLogger()
 
 	// Add detailed logging throughout the plugin execution
 	log.Info("MSSQL Plugin starting execution")
@@ -67,9 +66,9 @@ func (p *Plugin) Start(ctx context.Context, cfg *structpb.Struct) error {
 
 // validateConfig validates the plugin configuration and returns a strongly-typed IngesterConfig
 func validateConfig(cfg *structpb.Struct) (*IngesterConfig, error) {
-	log := logging.GetLogger()
+	log := GetLogger()
 	raw := cfg.AsMap()
-	log.Debug("Struct Config map:", cfg)
+	log.Debug("Struct Config map", "config", cfg)
 
 	// Initialize the config struct
 	config := &IngesterConfig{}

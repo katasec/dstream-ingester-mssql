@@ -27,7 +27,7 @@ type Ingester struct {
 
 // Start kicks off monitoring and publishing for the configured tables.
 func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) error {
-	logger := logging.GetLogger()
+	logger := GetLogger()
 	logger.Info("Starting MSSQL ingester...")
 
 	// Ensure config is injected
