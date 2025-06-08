@@ -19,7 +19,7 @@ type Plugin struct{}
 // ───────────────────────────────────────────────────────────────────────────────
 func (p *Plugin) Start(ctx context.Context, cfg *structpb.Struct) error {
 	log := logging.GetLogger()
-	
+
 	// Validate and convert config to IngesterConfig
 	ingesterConfig, err := validateConfig(cfg)
 	if err != nil {
@@ -37,10 +37,10 @@ func validateConfig(cfg *structpb.Struct) (*IngesterConfig, error) {
 	log := logging.GetLogger()
 	raw := cfg.AsMap()
 	log.Debug("Struct Config map:", cfg)
-	
+
 	// Initialize the config struct
 	config := &IngesterConfig{}
-	
+
 	// --- required: db_connection_string ---------------------------------------------------------
 	connStr, ok := raw["db_connection_string"].(string)
 	log.Debug("Raw Config map:", raw)
