@@ -15,11 +15,17 @@ func main() {
 		logLevel = hclog.LevelFromString(level)
 	}
 
+	// Check if JSON logging is enabled
+	jsonFormat := false
+	if jsonEnv := os.Getenv("DSTREAM_LOG_JSON"); jsonEnv == "true" || jsonEnv == "1" {
+		jsonFormat = true
+	}
+
 	logger := hclog.New(&hclog.LoggerOptions{
 		Name:       "mssql-plugin",
 		Level:      logLevel,
 		Output:     os.Stderr, // Important: use stderr, not stdout for plugin logs
-		JSONFormat: false,
+		JSONFormat: jsonFormat,
 	})
 
 	// Set the logger as a global for the mssql package to use

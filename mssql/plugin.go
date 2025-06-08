@@ -57,9 +57,23 @@ func (p *Plugin) Start(ctx context.Context, cfg *structpb.Struct) error {
 		wg:     &sync.WaitGroup{},
 	}
 
-	// Start the ingester with a simple event handler that logs events
+	// Start the ingester with an event handler that logs events in a structured format
 	return ing.Start(ctx, func(e plugins.Event) error {
-		log.Debug("[EVENT]", e)
+		// Extract metadata and data for better structured logging
+		metadata, hasMetadata := e["metadata"].(map[string]interface{})
+		data, hasData := e["data"].(map[string]interface{})
+		
+		if hasMetadata && hasData {
+			// Log with structured fields
+			log.Info("CDC Event",
+				"table", metadata["TableName"],
+				"operation", metadata["OperationType"],
+				"lsn", metadata["LSN"],
+				"data", data)
+		} else {
+			// Fallback for unexpected event structure
+			log.Debug("CDC Event with unexpected structure", "event", e)
+		}
 		return nil
 	})
 }
