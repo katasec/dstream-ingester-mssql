@@ -22,6 +22,11 @@ type Plugin struct{}
 func (p *Plugin) Start(ctx context.Context, cfg *structpb.Struct) error {
 	log := logging.GetLogger()
 
+	// Add test logs to verify plugin logging works
+	log.Debug("Plugin starting - DEBUG level test message")
+	log.Info("Plugin starting - INFO level test message")
+	log.Warn("Plugin starting - WARN level test message")
+
 	// Validate and convert config to IngesterConfig
 	ingesterConfig, err := validateConfig(cfg)
 	if err != nil {
