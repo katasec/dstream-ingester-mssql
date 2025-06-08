@@ -19,14 +19,35 @@ type Plugin struct{}
 // ───────────────────────────────────────────────────────────────────────────────
 func (p *Plugin) Start(ctx context.Context, cfg *structpb.Struct) error {
 	log := logging.GetLogger()
+	
+	// Validate and convert config to IngesterConfig
+	ingesterConfig, err := validateConfig(cfg)
+	if err != nil {
+		return err
+	}
+
+	log.Debug("[MSSQLPlugin] ConnStr:", ingesterConfig.DBConnectionString)
+	log.Debug("[MSSQLPlugin] Tables :", ingesterConfig.Tables)
+
+	return StartFromConfig(ctx, ingesterConfig)
+}
+
+// validateConfig validates the plugin configuration and returns a strongly-typed IngesterConfig
+func validateConfig(cfg *structpb.Struct) (*IngesterConfig, error) {
+	log := logging.GetLogger()
 	raw := cfg.AsMap()
 	log.Debug("Struct Config map:", cfg)
+	
+	// Initialize the config struct
+	config := &IngesterConfig{}
+	
 	// --- required: db_connection_string ---------------------------------------------------------
 	connStr, ok := raw["db_connection_string"].(string)
 	log.Debug("Raw Config map:", raw)
 	if !ok || connStr == "" {
-		return fmt.Errorf("missing required config: db_connection_string")
+		return nil, fmt.Errorf("missing required config: db_connection_string")
 	}
+	config.DBConnectionString = connStr
 
 	// --- required: tables ----------------------------------------------------------------------
 	var tables []string
@@ -42,16 +63,74 @@ func (p *Plugin) Start(ctx context.Context, cfg *structpb.Struct) error {
 			tables = append(tables, v)
 		}
 	default:
-		return fmt.Errorf("tables must be a list of strings")
+		return nil, fmt.Errorf("tables must be a list of strings")
 	}
 	if len(tables) == 0 {
-		return fmt.Errorf("missing required config: tables")
+		return nil, fmt.Errorf("missing required config: tables")
+	}
+	config.Tables = tables
+
+	// --- required: lock configuration ---------------------------------------------------------
+	lockConfig, ok := raw["lock"].(map[string]interface{})
+	if !ok || lockConfig == nil {
+		return nil, fmt.Errorf("missing required config: lock")
 	}
 
-	log.Debug("[MSSQLPlugin] ConnStr:", connStr)
-	log.Debug("[MSSQLPlugin] Tables :", tables)
+	// Validate lock type
+	lockType, ok := lockConfig["type"].(string)
+	if !ok || lockType == "" {
+		return nil, fmt.Errorf("missing required config: lock.type")
+	}
+	config.Lock.Type = lockType
 
-	return StartFromConfig(ctx, connStr, tables)
+	// Validate lock provider
+	lockProvider, ok := lockConfig["provider"].(string)
+	if !ok || lockProvider == "" {
+		return nil, fmt.Errorf("missing required config: lock.provider")
+	}
+	config.Lock.Provider = lockProvider
+
+	// Validate lock connection string
+	lockConnStr, ok := lockConfig["connection_string"].(string)
+	if !ok || lockConnStr == "" {
+		return nil, fmt.Errorf("missing required config: lock.connection_string")
+	}
+	config.Lock.ConnectionString = lockConnStr
+
+	// Validate lock container name
+	lockContainer, ok := lockConfig["container_name"].(string)
+	if !ok || lockContainer == "" {
+		return nil, fmt.Errorf("missing required config: lock.container_name")
+	}
+	config.Lock.ContainerName = lockContainer
+
+	// --- optional: ingest_queue configuration -------------------------------------------------
+	if ingestQueue, ok := raw["ingest_queue"].(map[string]interface{}); ok && ingestQueue != nil {
+		if provider, ok := ingestQueue["provider"].(string); ok {
+			config.IngestQueue.Provider = provider
+		}
+		if queueType, ok := ingestQueue["type"].(string); ok {
+			config.IngestQueue.Type = queueType
+		}
+		if name, ok := ingestQueue["name"].(string); ok {
+			config.IngestQueue.Name = name
+		}
+		if connStr, ok := ingestQueue["connection_string"].(string); ok {
+			config.IngestQueue.ConnectionString = connStr
+		}
+	}
+
+	// --- optional: polling configuration -----------------------------------------------------
+	if polling, ok := raw["polling"].(map[string]interface{}); ok && polling != nil {
+		if interval, ok := polling["interval"].(string); ok {
+			config.Polling.Interval = interval
+		}
+		if maxInterval, ok := polling["max_interval"].(string); ok {
+			config.Polling.MaxInterval = maxInterval
+		}
+	}
+
+	return config, nil
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -89,7 +168,7 @@ func (p *Plugin) GetSchema(ctx context.Context) ([]*pb.FieldSchema, error) {
 		{
 			Name:        "lock",
 			Type:        pb.FieldTypeObject,
-			Required:    false,
+			Required:    true,
 			Description: "Distributed-lock configuration",
 			Fields: []*pb.FieldSchema{
 				{Name: "provider", Type: pb.FieldTypeString, Required: true},

@@ -22,7 +22,7 @@ import (
 // Ingester is an internal helper used by StartFromConfig.
 // It no longer implements the (removed) plugins.Ingester interface.
 type Ingester struct {
-	config        *config.Config
+	config        *IngesterConfig
 	dbConn        *sql.DB
 	lockerFactory *locking.LockerFactory
 	wg            *sync.WaitGroup
@@ -42,7 +42,7 @@ func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) er
 	// ---------------------------------------------------------------------
 	// DB connection
 	// ---------------------------------------------------------------------
-	dbConn, err := db.Connect(cfg.Ingester.DBConnectionString)
+	dbConn, err := db.Connect(cfg.DBConnectionString)
 	if err != nil {
 		return fmt.Errorf("failed to connect to DB: %w", err)
 	}
@@ -53,10 +53,10 @@ func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) er
 	// Distributed lock factory
 	// ---------------------------------------------------------------------
 	s.lockerFactory = locking.NewLockerFactory(
-		cfg.Ingester.Locks.Type,
-		cfg.Ingester.Locks.ConnectionString,
-		cfg.Ingester.Locks.ContainerName,
-		cfg.Ingester.DBConnectionString,
+		cfg.Lock.Type,
+		cfg.Lock.ConnectionString,
+		cfg.Lock.ContainerName,
+		cfg.DBConnectionString,
 	)
 
 	// ---------------------------------------------------------------------
@@ -71,10 +71,31 @@ func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) er
 	// ---------------------------------------------------------------------
 	// Launch orchestrator
 	// ---------------------------------------------------------------------
+	// Convert string table names to a slice of config.ResolvedTableConfig for the orchestrator
+	var tableConfigs []config.ResolvedTableConfig
+	for _, tableName := range tablesToMonitor {
+		// Get polling intervals from config or use defaults
+		pollInterval := "10s"     // Default
+		maxPollInterval := "300s" // Default
+
+		if s.config.Polling.Interval != "" {
+			pollInterval = s.config.Polling.Interval
+		}
+		if s.config.Polling.MaxInterval != "" {
+			maxPollInterval = s.config.Polling.MaxInterval
+		}
+
+		tableConfigs = append(tableConfigs, config.ResolvedTableConfig{
+			Name:            tableName,
+			PollInterval:    pollInterval,
+			MaxPollInterval: maxPollInterval,
+		})
+	}
+
 	genericOrch := orchestrator.NewGenericTableMonitoringOrchestrator(
 		s.dbConn,
 		s.lockerFactory,
-		tablesToMonitor,
+		tableConfigs,
 		func(table config.ResolvedTableConfig) (orchestrator.TableMonitor, error) {
 			pollDur, err := time.ParseDuration(table.PollInterval)
 			if err != nil {
@@ -122,14 +143,12 @@ func (s *Ingester) Stop() error {
 //  Helpers
 // -----------------------------------------------------------------------------
 
-func (s *Ingester) GetTablesToMonitor() []config.ResolvedTableConfig {
+func (s *Ingester) GetTablesToMonitor() []string {
 	logger := logging.GetLogger()
-	var toMonitor []config.ResolvedTableConfig
+	var toMonitor []string
 
-	tableNames := make([]string, len(s.config.Ingester.Tables))
-	for i, t := range s.config.Ingester.Tables {
-		tableNames[i] = t.Name
-	}
+	// Use the tables directly from our new IngesterConfig
+	tableNames := s.config.Tables
 
 	locked, err := s.lockerFactory.GetLockedTables(tableNames)
 	if err != nil {
@@ -141,19 +160,19 @@ func (s *Ingester) GetTablesToMonitor() []config.ResolvedTableConfig {
 		lockedMap[name] = true
 	}
 
-	for _, t := range s.config.Ingester.Tables {
-		lockName := s.lockerFactory.GetLockName(t.Name)
+	for _, tableName := range tableNames {
+		lockName := s.lockerFactory.GetLockName(tableName)
 		if lockedMap[lockName] {
-			logger.Info("Table is locked — skipping", "table", t.Name)
+			logger.Info("Table is locked — skipping", "table", tableName)
 			continue
 		}
-		if enabled, err := isCDCEnabled(s.dbConn, t.Name); err != nil || !enabled {
-			logger.Warn("Skipping non-CDC table", "table", t.Name)
+		if enabled, err := isCDCEnabled(s.dbConn, tableName); err != nil || !enabled {
+			logger.Warn("Skipping non-CDC table", "table", tableName)
 			continue
 		}
-		logger.Info("CDC enabled — monitoring", "table", t.Name)
-		toMonitor = append(toMonitor, t)
+		toMonitor = append(toMonitor, tableName)
 	}
+
 	return toMonitor
 }
 
@@ -196,16 +215,10 @@ func (p *pluginPublisher) Close() error { return nil }
 //  Helper used by plugin.Start to bootstrap the Ingester
 // -----------------------------------------------------------------------------
 
-func StartFromConfig(ctx context.Context, dbConnStr string, tables []string) error {
+func StartFromConfig(ctx context.Context, cfg *IngesterConfig) error {
 	ing := &Ingester{
-		config: &config.Config{
-			Ingester: config.Ingester{
-				DBConnectionString: dbConnStr,
-				RawTables:          tables,
-				// Locks & polling are defaulted; you can wire them in later.
-			},
-		},
-		wg: &sync.WaitGroup{},
+		config: cfg,
+		wg:     &sync.WaitGroup{},
 	}
 	return ing.Start(ctx, func(e plugins.Event) error {
 		logging.GetLogger().Debug("[EVENT]", e)
