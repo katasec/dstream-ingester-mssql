@@ -2,6 +2,7 @@ package mssql
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -64,12 +65,19 @@ func (p *Plugin) Start(ctx context.Context, cfg *structpb.Struct) error {
 		data, hasData := e["data"].(map[string]interface{})
 		
 		if hasMetadata && hasData {
-			// Log with structured fields
+			// Convert data map to JSON string
+			dataJSON, err := json.Marshal(data)
+			if err != nil {
+				log.Error("Failed to marshal data to JSON", "error", err)
+				dataJSON = []byte(`{"error": "Failed to marshal to JSON"}`)
+			}
+			
+			// Log with structured fields and JSON data
 			log.Info("CDC Event",
 				"table", metadata["TableName"],
 				"operation", metadata["OperationType"],
 				"lsn", metadata["LSN"],
-				"data", data)
+				"data_json", string(dataJSON))
 		} else {
 			// Fallback for unexpected event structure
 			log.Debug("CDC Event with unexpected structure", "event", e)
