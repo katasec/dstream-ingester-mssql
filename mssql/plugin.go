@@ -74,7 +74,7 @@ func (p *Plugin) Start(ctx context.Context, cfg *structpb.Struct) error {
 func validateConfig(cfg *structpb.Struct) (*IngesterConfig, error) {
 	log := GetLogger()
 	raw := cfg.AsMap()
-	log.Debug("Struct Config map", "config", cfg)
+	//log.Debug("Struct Config map", "config", cfg)
 
 	// Initialize the config struct
 	config := &IngesterConfig{}
