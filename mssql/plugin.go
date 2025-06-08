@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/katasec/dstream/pkg/plugins"
 	pb "github.com/katasec/dstream/proto"
@@ -23,25 +22,9 @@ type Plugin struct{}
 func (p *Plugin) Start(ctx context.Context, cfg *structpb.Struct) error {
 	log := GetLogger()
 
-	// Add detailed logging throughout the plugin execution
+	// Add detailed logging at plugin startup
 	log.Info("MSSQL Plugin starting execution")
 	log.Debug("MSSQL Plugin received configuration")
-
-	// Log every second to demonstrate continuous operation
-	go func() {
-		ticker := time.NewTicker(1 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				log.Debug("MSSQL Plugin heartbeat")
-			case <-ctx.Done():
-				log.Info("MSSQL Plugin stopping heartbeat due to context cancellation")
-				return
-			}
-		}
-	}()
 
 	// Validate and convert config to IngesterConfig
 	ingesterConfig, err := validateConfig(cfg)
@@ -63,21 +46,21 @@ func (p *Plugin) Start(ctx context.Context, cfg *structpb.Struct) error {
 		// Extract metadata and data for better structured logging
 		metadata, hasMetadata := e["metadata"].(map[string]interface{})
 		data, hasData := e["data"].(map[string]interface{})
-		
+
 		if hasMetadata && hasData {
-			// Convert data map to JSON string
-			dataJSON, err := json.Marshal(data)
+			// Convert data map to JSON string with pretty formatting
+			dataJSON, err := json.MarshalIndent(data, "", "  ")
 			if err != nil {
 				log.Error("Failed to marshal data to JSON", "error", err)
 				dataJSON = []byte(`{"error": "Failed to marshal to JSON"}`)
 			}
-			
-			// Log with structured fields and JSON data
+
+			// Log with structured fields and pretty JSON data
 			log.Info("CDC Event",
 				"table", metadata["TableName"],
 				"operation", metadata["OperationType"],
 				"lsn", metadata["LSN"],
-				"data_json", string(dataJSON))
+				"data", string(dataJSON))
 		} else {
 			// Fallback for unexpected event structure
 			log.Debug("CDC Event with unexpected structure", "event", e)
