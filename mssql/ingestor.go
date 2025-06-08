@@ -113,6 +113,7 @@ func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) er
 				&pluginPublisher{emit: emit},
 			), nil
 		},
+		logger, // Pass the plugin's logger to avoid duplicate prefixes
 	)
 
 	// Start the orchestrator directly in the main thread
