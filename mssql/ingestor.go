@@ -4,10 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/katasec/dstream-ingester-mssql/mssql/monitor"
@@ -115,21 +112,17 @@ func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) er
 		},
 	)
 
-	go func() {
-		if err := genericOrch.Start(ctx); err != nil {
-			logger.Error("Orchestrator error", "error", err)
-		}
-	}()
-
-	// ---------------------------------------------------------------------
-	// Graceful shutdown on Ctrl-C / SIGTERM
-	// ---------------------------------------------------------------------
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	<-sigChan
-
-	logger.Info("Ctrl-C detected, shutting down gracefully...")
-	logger.Info("All monitoring goroutines exited cleanly.")
+	// Start the orchestrator directly in the main thread
+	// The context will be cancelled by RunWithGracefulShutdown when a signal is received
+	logger.Info("Starting orchestrator for tables", "tables", tablesToMonitor)
+	err = genericOrch.Start(ctx)
+	if err != nil && err != context.Canceled {
+		logger.Error("Orchestrator error", "error", err)
+		return err
+	}
+	
+	// If we get here, it means the orchestrator exited normally (context was cancelled)
+	logger.Info("Orchestrator exited cleanly")
 	return nil
 }
 
@@ -211,17 +204,4 @@ func (p *pluginPublisher) PublishChanges(changes []map[string]interface{}) (<-ch
 }
 func (p *pluginPublisher) Close() error { return nil }
 
-// -----------------------------------------------------------------------------
-//  Helper used by plugin.Start to bootstrap the Ingester
-// -----------------------------------------------------------------------------
 
-func StartFromConfig(ctx context.Context, cfg *IngesterConfig) error {
-	ing := &Ingester{
-		config: cfg,
-		wg:     &sync.WaitGroup{},
-	}
-	return ing.Start(ctx, func(e plugins.Event) error {
-		logging.GetLogger().Debug("[EVENT]", e)
-		return nil
-	})
-}

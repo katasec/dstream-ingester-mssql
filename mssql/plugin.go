@@ -3,8 +3,10 @@ package mssql
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/katasec/dstream/pkg/logging"
+	"github.com/katasec/dstream/pkg/plugins"
 	pb "github.com/katasec/dstream/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -29,7 +31,17 @@ func (p *Plugin) Start(ctx context.Context, cfg *structpb.Struct) error {
 	log.Debug("[MSSQLPlugin] ConnStr:", ingesterConfig.DBConnectionString)
 	log.Debug("[MSSQLPlugin] Tables :", ingesterConfig.Tables)
 
-	return StartFromConfig(ctx, ingesterConfig)
+	// Create ingester instance
+	ing := &Ingester{
+		config: ingesterConfig,
+		wg:     &sync.WaitGroup{},
+	}
+
+	// Start the ingester with a simple event handler that logs events
+	return ing.Start(ctx, func(e plugins.Event) error {
+		log.Debug("[EVENT]", e)
+		return nil
+	})
 }
 
 // validateConfig validates the plugin configuration and returns a strongly-typed IngesterConfig
