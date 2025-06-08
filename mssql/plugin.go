@@ -20,6 +20,7 @@ type Plugin struct{}
 //
 // ───────────────────────────────────────────────────────────────────────────────
 func (p *Plugin) Start(ctx context.Context, cfg *structpb.Struct) error {
+	// Get the logger from the SDK
 	log := GetLogger()
 
 	// Add detailed logging at plugin startup

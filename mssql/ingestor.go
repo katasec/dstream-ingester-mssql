@@ -11,7 +11,6 @@ import (
 	"github.com/katasec/dstream/pkg/config"
 	"github.com/katasec/dstream/pkg/db"
 	"github.com/katasec/dstream/pkg/locking"
-	"github.com/katasec/dstream/pkg/logging"
 	"github.com/katasec/dstream/pkg/orchestrator"
 	"github.com/katasec/dstream/pkg/plugins"
 )
@@ -140,7 +139,7 @@ func (s *Ingester) Stop() error {
 // -----------------------------------------------------------------------------
 
 func (s *Ingester) GetTablesToMonitor() []string {
-	logger := logging.GetLogger()
+	logger := GetLogger()
 	var toMonitor []string
 
 	// Use the tables directly from our new IngesterConfig
