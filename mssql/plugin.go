@@ -72,7 +72,7 @@ func (p *Plugin) Start(ctx context.Context, cfg *structpb.Struct) error {
 
 // validateConfig validates the plugin configuration and returns a strongly-typed IngesterConfig
 func validateConfig(cfg *structpb.Struct) (*IngesterConfig, error) {
-	log := GetLogger()
+	//log := GetLogger()
 	raw := cfg.AsMap()
 	//log.Debug("Struct Config map", "config", cfg)
 
@@ -81,7 +81,7 @@ func validateConfig(cfg *structpb.Struct) (*IngesterConfig, error) {
 
 	// --- required: db_connection_string ---------------------------------------------------------
 	connStr, ok := raw["db_connection_string"].(string)
-	log.Debug("Raw Config map:", raw)
+	// log.Debug("Raw Config map:", raw)
 	if !ok || connStr == "" {
 		return nil, fmt.Errorf("missing required config: db_connection_string")
 	}
