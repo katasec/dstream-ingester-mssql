@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/katasec/dstream/pkg/logging"
 	"github.com/katasec/dstream/pkg/plugins"
@@ -22,10 +23,25 @@ type Plugin struct{}
 func (p *Plugin) Start(ctx context.Context, cfg *structpb.Struct) error {
 	log := logging.GetLogger()
 
-	// Add test logs to verify plugin logging works
-	log.Debug("Plugin starting - DEBUG level test message")
-	log.Info("Plugin starting - INFO level test message")
-	log.Warn("Plugin starting - WARN level test message")
+	// Add detailed logging throughout the plugin execution
+	log.Info("MSSQL Plugin starting execution")
+	log.Debug("MSSQL Plugin received configuration")
+
+	// Log every second to demonstrate continuous operation
+	go func() {
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				log.Debug("MSSQL Plugin heartbeat")
+			case <-ctx.Done():
+				log.Info("MSSQL Plugin stopping heartbeat due to context cancellation")
+				return
+			}
+		}
+	}()
 
 	// Validate and convert config to IngesterConfig
 	ingesterConfig, err := validateConfig(cfg)
