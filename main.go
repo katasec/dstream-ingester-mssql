@@ -7,10 +7,10 @@ import (
 )
 
 func main() {
-	// Create a plugin logger using the SDK's SetupPluginLogger
-	// This creates a logger with no timestamps (host will add these)
-	//logger := logging.SetupPluginLogger("mssql-plugin")
-	logger := logging.SetupCleanLogger()
+	// Create a completely bare logger with no prefixes or timestamps
+	// for the cleanest possible output
+	logger := logging.SetupBareLogger()
+
 	// Set the logger as a global for the mssql package to use
 	mssql.SetLogger(logger)
 

@@ -2,7 +2,7 @@ package mssql
 
 import (
 	"github.com/hashicorp/go-hclog"
-	"github.com/katasec/dstream/pkg/logging"
+	"github.com/katasec/dstream/sdk/logging"
 )
 
 // Default logger
@@ -16,8 +16,8 @@ func SetLogger(logger hclog.Logger) {
 // GetLogger returns the global logger for the mssql package
 func GetLogger() hclog.Logger {
 	if pluginLogger == nil {
-		// Initialize with the SDK plugin logger
-		pluginLogger = logging.GetPluginLogger("mssql-plugin")
+		// Initialize with the bare logger for clean output with no prefixes
+		pluginLogger = logging.SetupBareLogger()
 	}
 	return pluginLogger
 }
