@@ -117,13 +117,45 @@ func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) er
 	// Start the orchestrator directly in the main thread
 	// The context will be cancelled by RunWithGracefulShutdown when a signal is received
 	logger.Info("Starting orchestrator for tables", "tables", tablesToMonitor)
-	err = genericOrch.Start(ctx)
-	if err != nil && err != context.Canceled {
-		logger.Error("Orchestrator error", "error", err)
-		return err
+	
+	// Create a done channel to signal when orchestrator is done
+	done := make(chan struct{})
+	
+	// Start the orchestrator in a goroutine
+	go func() {
+		defer close(done)
+		err = genericOrch.Start(ctx)
+		if err != nil && err != context.Canceled {
+			logger.Error("Orchestrator error", "error", err)
+		}
+	}()
+	
+	// Wait for either context cancellation or orchestrator completion
+	select {
+	case <-ctx.Done():
+		// Context was cancelled (e.g., by Ctrl+C)
+		logger.Info("Context cancelled, waiting for orchestrator to clean up...")
+		
+		// Wait for the orchestrator to finish cleanup
+		select {
+		case <-done:
+			logger.Info("Orchestrator finished cleanup after context cancellation")
+		case <-time.After(5 * time.Second):
+			// Add a timeout to ensure we don't wait forever
+			logger.Info("Timed out waiting for orchestrator cleanup, but locks should be released")
+		}
+	
+	case <-done:
+		// Orchestrator completed on its own
+		if err != nil && err != context.Canceled {
+			return err
+		}
 	}
 
-	// If we get here, it means the orchestrator exited normally (context was cancelled)
+	// Add a small delay to ensure logs are flushed
+	time.Sleep(500 * time.Millisecond)
+	
+	// If we get here, it means the orchestrator exited normally
 	logger.Info("Orchestrator exited cleanly")
 	return nil
 }
