@@ -117,45 +117,47 @@ func (s *Ingester) Start(ctx context.Context, emit func(plugins.Event) error) er
 	// Start the orchestrator directly in the main thread
 	// The context will be cancelled by RunWithGracefulShutdown when a signal is received
 	logger.Info("Starting orchestrator for tables", "tables", tablesToMonitor)
-	
-	// Create a done channel to signal when orchestrator is done
-	done := make(chan struct{})
-	
-	// Start the orchestrator in a goroutine
+
+	// Create a derived context with a timeout to ensure cleanup happens
+	// This ensures that even if the main context is cancelled, we have time to clean up
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Use a channel to detect when the main context is cancelled
+	shutdownCh := make(chan struct{})
 	go func() {
-		defer close(done)
-		err = genericOrch.Start(ctx)
-		if err != nil && err != context.Canceled {
-			logger.Error("Orchestrator error", "error", err)
-		}
+		<-ctx.Done() // Wait for main context to be cancelled
+		logger.Info("Context cancelled, orchestrator will clean up...")
+		close(shutdownCh)
 	}()
-	
-	// Wait for either context cancellation or orchestrator completion
-	select {
-	case <-ctx.Done():
-		// Context was cancelled (e.g., by Ctrl+C)
-		logger.Info("Context cancelled, waiting for orchestrator to clean up...")
-		
-		// Wait for the orchestrator to finish cleanup
+
+	// Run the orchestrator with the main context
+	err = genericOrch.Start(ctx)
+
+	// If we get here, the orchestrator has exited
+
+	// Check if it was due to context cancellation
+	if err == context.Canceled {
+		// Wait a bit to ensure locks are released and logs are flushed
+		logger.Info("Orchestrator received cancellation, ensuring cleanup...")
+
+		// Wait for either the cleanup timeout or for the shutdown to complete
 		select {
-		case <-done:
-			logger.Info("Orchestrator finished cleanup after context cancellation")
-		case <-time.After(5 * time.Second):
-			// Add a timeout to ensure we don't wait forever
-			logger.Info("Timed out waiting for orchestrator cleanup, but locks should be released")
+		case <-cleanupCtx.Done():
+			logger.Info("Cleanup timeout reached")
+		case <-time.After(1 * time.Second):
+			logger.Info("Cleanup delay completed")
 		}
-	
-	case <-done:
-		// Orchestrator completed on its own
-		if err != nil && err != context.Canceled {
-			return err
-		}
+
+		logger.Info("Orchestrator exited cleanly")
+		return nil
+	} else if err != nil {
+		// Real error occurred
+		logger.Error("Orchestrator error", "error", err)
+		return err
 	}
 
-	// Add a small delay to ensure logs are flushed
-	time.Sleep(500 * time.Millisecond)
-	
-	// If we get here, it means the orchestrator exited normally
+	// If we get here, it means the orchestrator exited normally without an error
 	logger.Info("Orchestrator exited cleanly")
 	return nil
 }
