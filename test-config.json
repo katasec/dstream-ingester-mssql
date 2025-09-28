@@ -1,0 +1,15 @@
+{
+  "db_connection_string": "server=localhost;database=testdb;trusted_connection=true",
+  "poll_interval": "5s",
+  "max_poll_interval": "5m",
+  "lock_config": {
+    "type": "azure_blob",
+    "connection_string": "DefaultEndpointsProtocol=https;AccountName=teststorage;AccountKey=testkey==;EndpointSuffix=core.windows.net",
+    "container_name": "locks"
+  },
+  "tables": [
+    "dbo.customers",
+    "dbo.orders",
+    "dbo.products"
+  ]
+}
