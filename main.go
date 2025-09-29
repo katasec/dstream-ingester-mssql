@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,13 +11,10 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-	"time"
 
-	"github.com/katasec/dstream-ingester-mssql/internal/cdc"
+	"github.com/katasec/dstream-ingester-mssql/internal/cdc/sqlserver"
 	"github.com/katasec/dstream-ingester-mssql/internal/config"
 	"github.com/katasec/dstream-ingester-mssql/internal/db"
-	"github.com/katasec/dstream-ingester-mssql/internal/locking"
-	"github.com/katasec/dstream-ingester-mssql/pkg/types"
 )
 
 func main() {
@@ -33,6 +29,15 @@ func main() {
 
 	log.Printf("Loaded configuration for %d tables", len(providerConfig.Tables))
 
+	// Connect to database once and share across all table monitors
+	database, err := db.Connect(providerConfig.DBConnectionString)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+	defer database.Close()
+	log.Printf("Successfully connected to database")
+	log.Printf("Connected to database, will be shared across all table monitors")
+
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -46,13 +51,28 @@ func main() {
 		cancel()
 	}()
 
-	// Start monitoring all tables concurrently
+	// Parse intervals once
+	pollInterval, err := providerConfig.GetPollInterval()
+	if err != nil {
+		log.Fatalf("Invalid poll interval: %v", err)
+	}
+
+	maxPollInterval, err := providerConfig.GetMaxPollInterval()
+	if err != nil {
+		log.Fatalf("Invalid max poll interval: %v", err)
+	}
+
+	// Create simple console publisher
+	publisher := &ConsolePublisher{}
+
+	// Start monitoring all tables concurrently using production monitors
 	var wg sync.WaitGroup
 	for _, tableName := range providerConfig.Tables {
 		wg.Add(1)
 		go func(table string) {
 			defer wg.Done()
-			if err := monitorTable(ctx, providerConfig, table); err != nil {
+			monitor := sqlserver.NewSQLServerTableMonitor(database, table, pollInterval, maxPollInterval, publisher)
+			if err := monitor.MonitorTable(ctx); err != nil && err != context.Canceled {
 				log.Printf("Error monitoring table %s: %v", table, err)
 			}
 		}(tableName)
@@ -79,161 +99,26 @@ func readConfigFromStdin() (*config.ProviderConfig, error) {
 	return config, nil
 }
 
-// monitorTable monitors a single table for CDC changes
-func monitorTable(ctx context.Context, providerConfig *config.ProviderConfig, tableName string) error {
-	log.Printf("Starting monitoring for table: %s", tableName)
+// ConsolePublisher implements cdc.ChangePublisher for console output
+type ConsolePublisher struct{}
 
-	// Parse polling intervals
-	pollInterval, err := providerConfig.GetPollInterval()
-	if err != nil {
-		return fmt.Errorf("invalid poll interval for table %s: %v", tableName, err)
-	}
-
-	maxPollInterval, err := providerConfig.GetMaxPollInterval()
-	if err != nil {
-		return fmt.Errorf("invalid max poll interval for table %s: %v", tableName, err)
-	}
-
-	// Connect to database
-	database, err := db.Connect(providerConfig.DBConnectionString)
-	if err != nil {
-		return fmt.Errorf("failed to connect to database for table %s: %v", tableName, err)
-	}
-	defer database.Close()
-
-	// Create distributed locker
-	locker := locking.NewLockerFactory(
-		providerConfig.LockConfig.Type,
-		providerConfig.LockConfig.ConnectionString,
-		providerConfig.LockConfig.ContainerName,
-		providerConfig.DBConnectionString,
-	)
-
-	// Create checkpoint manager
-	checkpointManager := cdc.NewCheckpointManager(database, tableName)
-
-	// Batch sizer would be used in actual CDC implementation
-	// batchSizer := cdc.NewBatchSizer(database, tableName, 256*1024)
-
-	// Get server name for output envelope
-	serverName := config.GetServerName(providerConfig.DBConnectionString)
-
-	// Main monitoring loop
-	ticker := time.NewTicker(pollInterval)
-	defer ticker.Stop()
-
-	currentInterval := pollInterval
-	backoff := cdc.NewBackoffManager(pollInterval, maxPollInterval)
-
-	for {
-		select {
-		case <-ctx.Done():
-			log.Printf("Context cancelled, stopping monitoring for table: %s", tableName)
-			return nil
-
-		case <-ticker.C:
-			// Try to acquire distributed lock
-			distributedLocker, err := locker.CreateLocker(tableName)
-			if err != nil {
-				log.Printf("Failed to create distributed locker for table %s: %v", tableName, err)
-				continue
-			}
-
-			leaseID, err := distributedLocker.AcquireLock(ctx, tableName)
-			if err != nil {
-				log.Printf("Failed to acquire lock for table %s: %v", tableName, err)
-				continue
-			}
-
-			if leaseID == "" {
-				// Table is already being processed by another instance
-				log.Printf("Table %s is locked by another instance, skipping", tableName)
-				continue
-			}
-
-			// Process CDC changes
-			changes, err := processCDCChanges(ctx, database, tableName, checkpointManager)
-			if err != nil {
-				log.Printf("Error processing CDC changes for table %s: %v", tableName, err)
-				distributedLocker.ReleaseLock(ctx, tableName, leaseID)
-				
-				// Apply exponential backoff on error
-				backoff.IncreaseInterval()
-				currentInterval = backoff.GetInterval()
-				ticker.Reset(currentInterval)
-				continue
-			}
-
-			// Release the lock
-			distributedLocker.ReleaseLock(ctx, tableName, leaseID)
-
-			// Output changes if any found
-			if len(changes) > 0 {
-				envelope := types.OutputEnvelope{
-					TableName:  tableName,
-					ServerName: serverName,
-					Changes:    changes,
-					Metadata: map[string]interface{}{
-						"batch_size":    len(changes),
-						"poll_interval": currentInterval.String(),
-					},
-				}
-
-				if err := outputEnvelope(envelope); err != nil {
-					log.Printf("Failed to output envelope for table %s: %v", tableName, err)
-				} else {
-					log.Printf("Output %d changes for table %s", len(changes), tableName)
-				}
-
-				// Reset backoff on successful processing
-				backoff.ResetInterval()
-				currentInterval = pollInterval
-				ticker.Reset(currentInterval)
-			} else {
-				// No changes found, apply backoff
-				backoff.IncreaseInterval()
-				currentInterval = backoff.GetInterval()
-				ticker.Reset(currentInterval)
-			}
+func (p *ConsolePublisher) PublishChanges(changes []map[string]interface{}) (<-chan bool, error) {
+	done := make(chan bool, 1)
+	
+	// Convert to JSON and output to stdout
+	for _, change := range changes {
+		jsonData, err := json.Marshal(change)
+		if err != nil {
+			done <- false
+			return done, fmt.Errorf("failed to marshal change to JSON: %v", err)
 		}
+		fmt.Println(string(jsonData))
 	}
+	
+	done <- true
+	return done, nil
 }
 
-// processCDCChanges queries for CDC changes and returns them
-func processCDCChanges(ctx context.Context, database *sql.DB, tableName string, checkpointManager *cdc.CheckpointManager) ([]types.ChangeEvent, error) {
-	// Get the last processed LSN
-	lastLSN, err := checkpointManager.GetLastLSN()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get last LSN: %v", err)
-	}
-
-	// Build CDC query
-	// This is a simplified version - in a real implementation, you'd need to:
-	// 1. Parse the table name to extract schema and table
-	// 2. Query the CDC tables (e.g., cdc.dbo_TableName_CT)
-	// 3. Handle different change types (Insert, Update, Delete)
-	// 4. Process column metadata properly
-	
-	// For now, return empty changes as this is just the framework
-	log.Printf("Processing CDC changes for table %s from LSN %s (placeholder implementation)", tableName, lastLSN)
-	
-	// TODO: Implement actual CDC query logic here
-	// This would involve:
-	// - Querying sys.fn_cdc_get_all_changes_* functions
-	// - Processing the results into ChangeEvent structures
-	// - Updating the checkpoint with new LSN
-	
-	return []types.ChangeEvent{}, nil
-}
-
-// outputEnvelope outputs a JSON envelope to stdout
-func outputEnvelope(envelope types.OutputEnvelope) error {
-	jsonData, err := json.Marshal(envelope)
-	if err != nil {
-		return fmt.Errorf("failed to marshal envelope to JSON: %v", err)
-	}
-
-	// Output to stdout with a newline
-	fmt.Println(string(jsonData))
+func (p *ConsolePublisher) Close() error {
 	return nil
 }

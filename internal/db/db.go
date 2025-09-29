@@ -3,12 +3,11 @@ package db
 import (
 	"database/sql"
 	"fmt"
-	"log"
 
 	_ "github.com/denisenkom/go-mssqldb"
+	"github.com/katasec/dstream-ingester-mssql/internal/logging"
 )
 
-// Connect establishes a connection to SQL Server database
 func Connect(connectionString string) (*sql.DB, error) {
 	db, err := sql.Open("sqlserver", connectionString)
 	if err != nil {
@@ -20,8 +19,11 @@ func Connect(connectionString string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to ping database: %v", err)
 	} else {
-		log.Println("Successfully connected to database")
+		logging.GetLogger().Info("Successfully pinged database")
 	}
+
+	var log = logging.GetLogger()
+	log.Info("Successfully connected to database")
 
 	return db, nil
 }

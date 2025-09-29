@@ -4,9 +4,8 @@ import (
 	"database/sql"
 )
 
-// GetColumnNames retrieves column names for a specific table
 func GetColumnNames(db *sql.DB, schema, tableName string) ([]string, error) {
-	query := `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = @tableName ORDER BY ORDINAL_POSITION`
+	query := `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = @tableName`
 	rows, err := db.Query(query, sql.Named("schema", schema), sql.Named("tableName", tableName))
 	if err != nil {
 		return nil, err
