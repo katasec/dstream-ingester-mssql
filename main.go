@@ -91,12 +91,27 @@ func readConfigFromStdin() (*config.ProviderConfig, error) {
 		return nil, fmt.Errorf("failed to read from stdin: %v", err)
 	}
 
-	config, err := config.LoadConfigFromJSON(input)
+	// Try to parse as DStream command envelope first
+	var envelope struct {
+		Command string                 `json:"command"`
+		Config  map[string]interface{} `json:"config"`
+	}
+
+	if err := json.Unmarshal(input, &envelope); err == nil && envelope.Command != "" {
+		// Re-marshal the config portion
+		configJSON, err := json.Marshal(envelope.Config)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal config from envelope: %v", err)
+		}
+		input = configJSON
+	}
+
+	providerConfig, err := config.LoadConfigFromJSON(input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse JSON config: %v", err)
 	}
 
-	return config, nil
+	return providerConfig, nil
 }
 
 // ConsolePublisher implements cdc.ChangePublisher for console output
