@@ -1,10 +1,11 @@
 #!/bin/bash
 # Build script for MSSQL CDC Provider
 # Compiles cross-platform Go binaries for all platforms
+# Binaries are named as plugin.* for DStream OCI artifact compatibility
 
 set -e
 
-BINARY_NAME="dstream-ingester-mssql"
+BINARY_NAME="plugin"
 TMP_DIR="${1:-.build}"
 PLATFORMS="linux_amd64 linux_arm64 darwin_amd64 darwin_arm64 windows_amd64"
 

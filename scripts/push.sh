@@ -5,9 +5,9 @@ set -e
 
 TAG="${1:-$(git describe --tags --abbrev=0 2>/dev/null || echo 'v0.1.0')}"
 TMP_DIR="${2:-.build}"
-REPO="writeameer/dstream-ingester-mssql"
+REPO="katasec/dstream-ingester-mssql"
 GHCR_REPO="ghcr.io/$REPO"
-BINARY_NAME="dstream-ingester-mssql"
+BINARY_NAME="plugin"
 
 echo "📦 Pushing provider to $GHCR_REPO:$TAG…"
 
@@ -20,17 +20,19 @@ else
 fi
 
 # Push OCI artifact with ORAS
+# Change to build dir to push without path prefixes (ORAS will preserve paths otherwise)
+cd "$TMP_DIR"
 /usr/local/bin/oras push "$GHCR_REPO:$TAG" \
     --artifact-type "application/vnd.dstream.provider" \
     --annotation "org.opencontainers.image.description=DStream SQL Server CDC provider" \
     --annotation "org.opencontainers.image.source=https://github.com/katasec/dstream-ingester-mssql" \
     --annotation "org.opencontainers.image.version=$TAG" \
-    "$TMP_DIR/${BINARY_NAME}.linux_amd64" \
-    "$TMP_DIR/${BINARY_NAME}.linux_arm64" \
-    "$TMP_DIR/${BINARY_NAME}.darwin_amd64" \
-    "$TMP_DIR/${BINARY_NAME}.darwin_arm64" \
-    "$TMP_DIR/${BINARY_NAME}.windows_amd64.exe" \
-    "$TMP_DIR/provider.json"
+    "${BINARY_NAME}.linux_amd64" \
+    "${BINARY_NAME}.linux_arm64" \
+    "${BINARY_NAME}.darwin_amd64" \
+    "${BINARY_NAME}.darwin_arm64" \
+    "${BINARY_NAME}.windows_amd64.exe" \
+    "provider.json"
 
 echo "✅ Provider pushed: $TAG"
 echo "📍 Available at: $GHCR_REPO:$TAG"

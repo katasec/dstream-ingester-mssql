@@ -2,6 +2,7 @@
 .DEFAULT_GOAL := help
 
 TAG ?= $(shell git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.0")
+LATEST_TAG := $(shell git describe --tags --abbrev=0 2>/dev/null || echo "v0.1.0")
 BUILD_DIR ?= .build
 
 help: ## Show this help menu
@@ -11,10 +12,10 @@ build: ## Build cross-platform Go binaries
 	@bash scripts/build.sh $(BUILD_DIR)
 
 manifest: build ## Create provider manifest
-	@bash scripts/create-manifest.sh $(TAG) $(BUILD_DIR)
+	@bash scripts/create-manifest.sh $(LATEST_TAG) $(BUILD_DIR)
 
-push: manifest ## Push provider to GHCR using ORAS
-	@bash scripts/push.sh $(TAG) $(BUILD_DIR)
+push: manifest ## Push provider to GHCR using ORAS (auto-detects latest tag)
+	@bash scripts/push.sh $(LATEST_TAG) $(BUILD_DIR)
 
 clean: ## Clean build artifacts
 	@echo "🧹 Cleaning build artifacts…"
